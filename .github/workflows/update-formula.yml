@@ -1,0 +1,94 @@
+name: Update formula
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Veasel release tag (for example v0.15.0-next.0)"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-formula
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve latest Veasel release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$INPUT_TAG" ]]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$(gh api 'repos/veasel-labs/veasel/releases?per_page=100' --jq '[.[] | select(.draft == false)][0].tag_name')"
+          fi
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-next\.[0-9]+)?$ ]] || {
+            echo "::error::Unexpected Veasel release tag: $TAG"
+            exit 1
+          }
+          VERSION="${TAG#v}"
+          URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/veasel-macOS.tar.gz"
+          curl --fail --location --retry 5 --retry-all-errors "$URL" -o /tmp/veasel-macOS.tar.gz
+          MANIFEST_URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/release.json"
+          curl --fail --location --retry 5 --retry-all-errors "$MANIFEST_URL" -o /tmp/veasel-release.json
+          SHA="$(shasum -a 256 /tmp/veasel-macOS.tar.gz | cut -d' ' -f1)"
+          MANIFEST_TAG="$(jq -r '.tag' /tmp/veasel-release.json)"
+          MANIFEST_VERSION="$(jq -r '.version' /tmp/veasel-release.json)"
+          EXPECTED="$(jq -r '.assets[] | select(.name == "veasel-macOS.tar.gz") | .sha256' /tmp/veasel-release.json)"
+          if [[ "$MANIFEST_TAG" != "$TAG" || "$MANIFEST_VERSION" != "$VERSION" || "$SHA" != "$EXPECTED" ]]; then
+            echo "::error::Downloaded archive does not match the versioned Veasel release manifest."
+            exit 1
+          fi
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "sha=$SHA"
+            echo "url=$URL"
+          } >> "$GITHUB_OUTPUT"
+      - name: Update formula metadata
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          URL: ${{ steps.release.outputs.url }}
+          SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          ruby -e '
+            path = "Formula/veasel-code.rb"
+            body = File.read(path)
+            { /^  url ".*"$/ => "  url \"#{ENV.fetch("URL")}\"",
+              /^  version ".*"$/ => "  version \"#{ENV.fetch("VERSION")}\"",
+              /^  sha256 ".*"$/ => "  sha256 \"#{ENV.fetch("SHA")}\"" }.each do |pattern, replacement|
+              abort "formula field missing: #{pattern}" unless body.sub!(pattern, replacement)
+            end
+            File.write(path, body)
+          '
+          brew style Formula/veasel-code.rb
+      - name: Test formula
+        run: |
+          brew install Formula/veasel-code.rb
+          brew test Formula/veasel-code.rb
+      - name: Commit release update
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Formula/veasel-code.rb; then
+            echo "Formula already reflects ${TAG}."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/veasel-code.rb
+          git commit -m "chore: update Veasel Code to ${TAG}"
+          git push origin HEAD:main
