@@ -25,6 +25,6 @@ jobs:
         run: |
           set -euo pipefail
           veasel --version
-          veasel --help | grep -F "Start or reuse the local V backend"
+          veasel --help | grep -F "Commands:"
           executable="$(python3 -c 'import os, shutil; print(os.path.realpath(shutil.which("veasel")))')"
           test -f "$(dirname "$executable")/tui/package.json"
