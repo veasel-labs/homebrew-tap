@@ -76,7 +76,7 @@ jobs:
           brew tap veasel-labs/tap "$GITHUB_WORKSPACE"
           cp Casks/veasel-code.rb "$(brew --repo veasel-labs/tap)/Casks/veasel-code.rb"
           brew style --cask veasel-labs/tap/veasel-code
-      - name: Test cask
+      - name: Install and smoke-test the cask
         run: |
           set -euo pipefail
           brew install --cask veasel-labs/tap/veasel-code

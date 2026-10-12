@@ -28,8 +28,8 @@ provider, model, endpoint, and API key.
 ## Updates
 
 The scheduled workflow checks Veasel's public releases, verifies the release
-asset digest, tests the formula, and updates this tap automatically. You can
-also run **Update formula** from Actions or dispatch a specific release tag.
+asset digest, tests the cask, and updates this tap automatically. You can
+also run **Update cask** from Actions or dispatch a specific release tag.
 
 ## Support
 

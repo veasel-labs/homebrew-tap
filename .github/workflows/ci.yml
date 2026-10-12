@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  formula:
+  cask:
+    name: cask
     runs-on: macos-15
     timeout-minutes: 20
     steps:

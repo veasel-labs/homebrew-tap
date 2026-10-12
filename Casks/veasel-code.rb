@@ -6,8 +6,6 @@ cask "veasel-code" do
   name "Veasel Code"
   desc "V-native AI coding agent with a local terminal interface"
   homepage "https://veasel.dev"
-  license "MIT"
-
   depends_on arch: :arm64
   depends_on formula: "bun"
 
