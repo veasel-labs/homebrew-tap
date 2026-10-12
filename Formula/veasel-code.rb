@@ -6,8 +6,8 @@ class VeaselCode < Formula
   sha256 "0fd1bf643a5036c518dd0deb49fa6a14329ed4c766225eac71ca7f81c2bff9e0"
   license "MIT"
 
-  depends_on "bun"
   depends_on arch: :arm64
+  depends_on "bun"
 
   def install
     libexec.install Dir["*"]
