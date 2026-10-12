@@ -73,11 +73,13 @@ jobs:
             end
             File.write(path, body)
           '
-          brew style Formula/veasel-code.rb
+          brew tap veasel-labs/tap "$GITHUB_WORKSPACE"
+          cp Formula/veasel-code.rb "$(brew --repo veasel-labs/tap)/Formula/veasel-code.rb"
+          brew style veasel-labs/tap/veasel-code
       - name: Test formula
         run: |
-          brew install Formula/veasel-code.rb
-          brew test Formula/veasel-code.rb
+          brew install veasel-labs/tap/veasel-code
+          brew test veasel-labs/tap/veasel-code
       - name: Commit release update
         env:
           TAG: ${{ steps.release.outputs.tag }}
