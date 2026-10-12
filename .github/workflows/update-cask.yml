@@ -1,4 +1,4 @@
-name: Update formula
+name: Update cask
 
 on:
   schedule:
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: update-formula
+  group: update-cask
   cancel-in-progress: false
 
 jobs:
@@ -57,40 +57,44 @@ jobs:
             echo "sha=$SHA"
             echo "url=$URL"
           } >> "$GITHUB_OUTPUT"
-      - name: Update formula metadata
+      - name: Update cask metadata
         env:
           VERSION: ${{ steps.release.outputs.version }}
           URL: ${{ steps.release.outputs.url }}
           SHA: ${{ steps.release.outputs.sha }}
         run: |
           ruby -e '
-            path = "Formula/veasel-code.rb"
+            path = "Casks/veasel-code.rb"
             body = File.read(path)
             { /^  url ".*"$/ => "  url \"#{ENV.fetch("URL")}\"",
               /^  version ".*"$/ => "  version \"#{ENV.fetch("VERSION")}\"",
               /^  sha256 ".*"$/ => "  sha256 \"#{ENV.fetch("SHA")}\"" }.each do |pattern, replacement|
-              abort "formula field missing: #{pattern}" unless body.sub!(pattern, replacement)
+              abort "cask field missing: #{pattern}" unless body.sub!(pattern, replacement)
             end
             File.write(path, body)
           '
           brew tap veasel-labs/tap "$GITHUB_WORKSPACE"
-          cp Formula/veasel-code.rb "$(brew --repo veasel-labs/tap)/Formula/veasel-code.rb"
-          brew style veasel-labs/tap/veasel-code
-      - name: Test formula
+          cp Casks/veasel-code.rb "$(brew --repo veasel-labs/tap)/Casks/veasel-code.rb"
+          brew style --cask veasel-labs/tap/veasel-code
+      - name: Test cask
         run: |
-          brew install veasel-labs/tap/veasel-code
-          brew test veasel-labs/tap/veasel-code
+          set -euo pipefail
+          brew install --cask veasel-labs/tap/veasel-code
+          veasel --version
+          veasel --help | grep -F "Start or reuse the local V backend"
+          executable="$(python3 -c 'import os, shutil; print(os.path.realpath(shutil.which("veasel")))')"
+          test -f "$(dirname "$executable")/tui/package.json"
       - name: Commit release update
         env:
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          if git diff --quiet -- Formula/veasel-code.rb; then
-            echo "Formula already reflects ${TAG}."
+          if git diff --quiet -- Casks/veasel-code.rb; then
+            echo "Cask already reflects ${TAG}."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/veasel-code.rb
+          git add Casks/veasel-code.rb
           git commit -m "chore: update Veasel Code to ${TAG}"
           git push origin HEAD:main

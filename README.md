@@ -11,13 +11,15 @@ V-native coding agent.
 
 ```sh
 brew tap veasel-labs/tap
-brew install veasel-code
+brew install --cask veasel-code
 veasel
 ```
 
-The current formula targets Apple Silicon Macs. Bun is installed as a runtime
+The current cask targets Apple Silicon Macs. Bun is installed as a runtime
 dependency for the OpenTUI terminal client. The V backend is a native binary
-and does not require a V compiler.
+and does not require a V compiler. The release archive stays in Homebrew's
+Caskroom so bundled macOS native modules keep their upstream `@rpath` install
+names intact.
 
 Use `veasel serve` to start only the local backend. Running `veasel` starts or
 reuses the loopback server, then opens the TUI. Press `s` to configure a model

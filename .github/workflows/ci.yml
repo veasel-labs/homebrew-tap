@@ -17,7 +17,13 @@ jobs:
       - name: Install the checked-out tap locally
         run: |
           brew tap veasel-labs/tap "$GITHUB_WORKSPACE"
-          cp Formula/veasel-code.rb "$(brew --repo veasel-labs/tap)/Formula/veasel-code.rb"
-      - run: brew style veasel-labs/tap/veasel-code
-      - run: brew install veasel-labs/tap/veasel-code
-      - run: brew test veasel-labs/tap/veasel-code
+          cp Casks/veasel-code.rb "$(brew --repo veasel-labs/tap)/Casks/veasel-code.rb"
+      - run: brew style --cask veasel-labs/tap/veasel-code
+      - run: brew install --cask veasel-labs/tap/veasel-code
+      - name: Smoke-test the installed command and bundled TUI
+        run: |
+          set -euo pipefail
+          veasel --version
+          veasel --help | grep -F "Start or reuse the local V backend"
+          executable="$(python3 -c 'import os, shutil; print(os.path.realpath(shutil.which("veasel")))')"
+          test -f "$(dirname "$executable")/tui/package.json"
