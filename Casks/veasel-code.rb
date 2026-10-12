@@ -5,7 +5,8 @@ cask "veasel-code" do
   url "https://github.com/veasel-labs/veasel/releases/download/v#{version}/veasel-macOS.tar.gz"
   name "Veasel Code"
   desc "V-native AI coding agent with a local terminal interface"
-  homepage "https://veasel.dev"
+  homepage "https://veasel.dev/"
+
   depends_on arch: :arm64
   depends_on formula: "bun"
 
