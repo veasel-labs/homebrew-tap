@@ -8,6 +8,7 @@ cask "veasel-code" do
   homepage "https://veasel.dev/"
 
   depends_on arch: :arm64
+
   binary "veasel"
 
   caveats <<~EOS
