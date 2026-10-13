@@ -27,4 +27,5 @@ jobs:
           veasel --version
           veasel --help | grep -F "Commands:"
           executable="$(python3 -c 'import os, shutil; print(os.path.realpath(shutil.which("veasel")))')"
-          test -f "$(dirname "$executable")/tui/package.json"
+          test -x "$(dirname "$executable")/veasel-tui"
+          test -f "$(dirname "$executable")/build.json"
