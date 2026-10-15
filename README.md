@@ -32,11 +32,12 @@ also run **Update cask** from Actions or dispatch a specific release tag.
 
 ## Current sync status
 
-As of 2026-10-15 the cask tracks **`v0.39.0-next.0`**, the newest verified
-public prerelease. That release includes configured MCP (user/project scope
-and portable `.mcp.json` import). This tap does **not** invent tags or
-digests: when a newer verified prerelease publishes, re-run **Update cask**
-(or wait for the schedule) and the workflow will bump the cask automatically.
+As of 2026-10-15 the cask tracks **`v0.40.0-next.0`**, the newest verified
+public prerelease (newer than `v0.39.0-next.1` / `v0.39.0-next.0`). That
+release includes configured MCP (user/project scope and portable `.mcp.json`
+import). This tap does **not** invent tags or digests: when a newer verified
+prerelease publishes, re-run **Update cask** (or wait for the schedule) and
+the workflow will bump the cask automatically.
 
 ## Support
 
