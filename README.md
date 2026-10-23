@@ -30,12 +30,13 @@ The scheduled workflow checks Veasel's public releases, verifies the release
 asset digest, tests the cask, and updates this tap automatically. You can
 also run **Update cask** from Actions or dispatch a specific release tag.
 
-## Current sync status
+## Release sync
 
-As of 2026-10-16 the cask tracks **`v0.42.0-next.0`**, the newest verified
-public prerelease. This tap does **not** invent tags or digests: when a newer
-verified prerelease publishes, re-run **Update cask** (or wait for the schedule)
-and the workflow will bump the cask automatically.
+The scheduled **Update cask** workflow follows the newest public Veasel release,
+verifies its archive against the release manifest, then updates the cask version
+and digest. The exact installed release is recorded in
+[`Casks/veasel-code.rb`](Casks/veasel-code.rb), so this README does not drift
+behind automated updates.
 
 ## Support
 
