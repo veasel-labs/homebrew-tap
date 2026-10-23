@@ -1,8 +1,8 @@
 cask "veasel-code" do
-  version "0.64.5-next.0"
-  sha256 "b450d4383aff93c3fc27100427aa8ee01ef0906dcb22fff72b06287a037b2745"
+  version "0.64.6-next.0"
+  sha256 "2ac636ea3bef857a159bc06cedf2531169b5d4c049ed1e3627b5af09cb97dce1"
 
-  url "https://github.com/veasel-labs/veasel/releases/download/v0.64.5-next.0/veasel-macOS.tar.gz"
+  url "https://github.com/veasel-labs/veasel/releases/download/v0.64.6-next.0/veasel-macOS.tar.gz"
   name "Veasel Code"
   desc "V-native AI coding agent with a local terminal interface"
   homepage "https://veasel.dev/"
