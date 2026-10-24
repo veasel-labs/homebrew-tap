@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: update-cask
@@ -56,7 +57,19 @@ jobs:
             echo "version=$VERSION"
             echo "sha=$SHA"
             echo "url=$URL"
+            echo "branch=automation/cask-update"
           } >> "$GITHUB_OUTPUT"
+      - name: Prepare cask update branch
+        env:
+          BRANCH: ${{ steps.release.outputs.branch }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+            git switch --create "$BRANCH" --track "origin/$BRANCH"
+          else
+            git switch --create "$BRANCH"
+          fi
       - name: Update cask metadata
         env:
           VERSION: ${{ steps.release.outputs.version }}
@@ -88,6 +101,9 @@ jobs:
       - name: Commit release update
         env:
           TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          BRANCH: ${{ steps.release.outputs.branch }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if git diff --quiet -- Casks/veasel-code.rb; then
@@ -98,4 +114,28 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Casks/veasel-code.rb
           git commit -m "chore: update Veasel Code to ${TAG}"
-          git push origin HEAD:main
+          git push --set-upstream origin "$BRANCH"
+          cat > "$RUNNER_TEMP/cask-update-pr.md" <<EOF
+          ## Summary
+
+          Update the Homebrew cask to verified Veasel release ${TAG}.
+
+          ## Validation
+
+          The updater verifies the downloaded macOS archive against the release manifest and smoke-tests the installed backend and bundled TUI. Pull request CI repeats cask style, install, and command checks. A human reviews and merges this change.
+
+          ## Scope
+
+          Cask version, release URL, and SHA-256 only.
+          EOF
+          pull_request="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --head "$GITHUB_REPOSITORY_OWNER:$BRANCH" --json number --jq '.[0].number // empty')"
+          if [[ -n "$pull_request" ]]; then
+            gh pr edit "$pull_request" --repo "$GITHUB_REPOSITORY" \
+              --title "chore: update Veasel Code to ${TAG}" \
+              --body-file "$RUNNER_TEMP/cask-update-pr.md"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" \
+              --draft --title "chore: update Veasel Code to ${TAG}" \
+              --body-file "$RUNNER_TEMP/cask-update-pr.md"
+          fi
