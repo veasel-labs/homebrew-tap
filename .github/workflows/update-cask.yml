@@ -57,7 +57,7 @@ jobs:
             echo "version=$VERSION"
             echo "sha=$SHA"
             echo "url=$URL"
-            echo "branch=automation/cask-${VERSION}"
+            echo "branch=automation/cask-update"
           } >> "$GITHUB_OUTPUT"
       - name: Prepare cask update branch
         env:
