@@ -27,15 +27,14 @@ provider, model, endpoint, and API key.
 ## Updates
 
 The scheduled workflow checks Veasel's public releases, verifies the release
-asset digest, tests the cask, and opens a draft PR with the update. A human
-reviews and merges the change before it reaches this tap. You can also run
-**Update cask** from Actions or dispatch a specific release tag.
+asset digest, tests the cask, and updates this tap automatically. You can
+also run **Update cask** from Actions or dispatch a specific release tag.
 
 ## Release sync
 
 The scheduled **Update cask** workflow follows the newest public Veasel release,
-verifies its archive against the release manifest, then proposes the cask version
-and digest in a draft PR. The exact installed release is recorded in
+verifies its archive against the release manifest, then updates the cask version
+and digest. The exact installed release is recorded in
 [`Casks/veasel-code.rb`](Casks/veasel-code.rb), so this README does not drift
 behind automated updates.
 
