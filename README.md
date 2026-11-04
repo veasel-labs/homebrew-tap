@@ -21,8 +21,10 @@ require Bun or a V compiler. The release archive stays in Homebrew's Caskroom
 so the backend can find its adjacent terminal-client executable.
 
 Use `veasel serve` to start only the local backend. Running `veasel` starts or
-reuses the loopback server, then opens the TUI. Press `s` to configure a model
-provider, model, endpoint, and API key.
+reuses the loopback server, then opens the TUI. At the home screen, type
+`/connect` for guided provider and model setup, then press `n` to create a
+project session. Press `s` only when you want advanced provider/model settings
+(including endpoint overrides).
 
 ## Updates
 
