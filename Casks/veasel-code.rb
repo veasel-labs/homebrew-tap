@@ -13,6 +13,7 @@ cask "veasel-code" do
 
   caveats <<~EOS
     Veasel Code starts or reuses its local backend when you run `veasel`.
-    Press `s` in the TUI to configure a provider and model.
+    Use `/connect` in the home screen for guided provider/model setup.
+    Press `n` to create a session; `s` opens advanced model settings.
   EOS
 end
