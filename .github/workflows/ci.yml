@@ -16,17 +16,78 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install the checked-out tap locally
+        with:
+          fetch-depth: 0
+      - name: Install the previous cask version
         run: |
           brew tap veasel-labs/tap "$GITHUB_WORKSPACE"
-          cp Casks/veasel-code.rb "$(brew --repo veasel-labs/tap)/Casks/veasel-code.rb"
-      - run: brew style --cask veasel-labs/tap/veasel-code
-      - run: brew install --cask veasel-labs/tap/veasel-code
-      - name: Smoke-test the installed command and bundled TUI
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            git fetch origin "$GITHUB_BASE_REF"
+            previous_ref=FETCH_HEAD
+          else
+            previous_ref="${GITHUB_SHA}^"
+          fi
+          previous_cask="$RUNNER_TEMP/veasel-previous-cask.rb"
+          git show "$previous_ref:Casks/veasel-code.rb" > "$previous_cask"
+          cask_version() {
+            ruby -ne 'puts $1 if $_ =~ /^\s*version "([^"]+)"/' "$1"
+          }
+          current_version="$(cask_version Casks/veasel-code.rb)"
+          previous_version="$(cask_version "$previous_cask")"
+          if [[ "$previous_version" == "$current_version" ]]; then
+            previous_ref="${previous_ref}^"
+            git show "$previous_ref:Casks/veasel-code.rb" > "$previous_cask"
+            previous_version="$(cask_version "$previous_cask")"
+          fi
+          if [[ -z "$previous_version" ]] || \
+             [[ "$previous_version" == "$current_version" ]]; then
+            echo "::error::Previous cask version not found."
+            exit 1
+          fi
+          tap_cask="$(brew --repo veasel-labs/tap)/Casks/veasel-code.rb"
+          cp "$previous_cask" "$tap_cask"
+      - name: Install, upgrade, and uninstall the cask
         run: |
           set -euo pipefail
-          veasel --version
-          veasel --help | grep -F "Commands:"
-          executable="$(python3 -c 'import os, shutil; print(os.path.realpath(shutil.which("veasel")))')"
-          test -x "$(dirname "$executable")/veasel-tui"
-          test -f "$(dirname "$executable")/build.json"
+          cask_path="$(brew --repo veasel-labs/tap)/Casks/veasel-code.rb"
+          cask_version() {
+            ruby -ne 'puts $1 if $_ =~ /^\s*version "([^"]+)"/' "$1"
+          }
+          check_installed_release() {
+            local cask_file="$1"
+            local expected_version
+            local expected_cli_version
+            local actual_version
+            local executable
+            expected_version="$(cask_version "$cask_file")"
+            expected_cli_version="${expected_version/.next./-next.}"
+            actual_version="$(veasel --version)"
+            test "$actual_version" = "Veasel Code ${expected_cli_version}"
+            veasel --help | grep -F "Commands:"
+            executable="$(resolve_path "$(command -v veasel)")"
+            test -x "$(dirname "$executable")/veasel-tui"
+            test -f "$(dirname "$executable")/build.json"
+          }
+          resolve_path() {
+            python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"
+          }
+
+          cp "$RUNNER_TEMP/veasel-previous-cask.rb" "$cask_path"
+          brew install --cask veasel-labs/tap/veasel-code
+          check_installed_release "$cask_path"
+
+          cp Casks/veasel-code.rb "$cask_path"
+          brew style --cask veasel-labs/tap/veasel-code
+          brew upgrade --cask veasel-labs/tap/veasel-code
+          check_installed_release Casks/veasel-code.rb
+
+          brew uninstall --cask veasel-labs/tap/veasel-code
+          command_path="$(brew --prefix)/bin/veasel"
+          if [[ -e "$command_path" || -L "$command_path" ]]; then
+            echo "::error::veasel remained on PATH after cask uninstall."
+            exit 1
+          fi
+          if brew list --cask --versions veasel-code | grep -q .; then
+            echo "::error::Cask remains installed after uninstall."
+            exit 1
+          fi
