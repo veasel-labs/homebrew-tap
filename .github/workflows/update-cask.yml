@@ -66,11 +66,15 @@ jobs:
           BRANCH: ${{ steps.release.outputs.branch }}
         run: |
           set -euo pipefail
+          git fetch origin main
           if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
             git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
             git switch --create "$BRANCH" --track "origin/$BRANCH"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git rebase origin/main
           else
-            git switch --create "$BRANCH"
+            git switch --create "$BRANCH" origin/main
           fi
       - name: Update cask metadata
         env:
