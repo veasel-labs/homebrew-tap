@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: Test previous cask version lookup
+        run: python3 scripts/test_previous_cask.py
       - name: Install the previous cask version
         run: |
           brew tap veasel-labs/tap "$GITHUB_WORKSPACE"
@@ -28,22 +30,8 @@ jobs:
             previous_ref="${GITHUB_SHA}^"
           fi
           previous_cask="$RUNNER_TEMP/veasel-previous-cask.rb"
-          git show "$previous_ref:Casks/veasel-code.rb" > "$previous_cask"
-          cask_version() {
-            ruby -ne 'puts $1 if $_ =~ /^\s*version "([^"]+)"/' "$1"
-          }
-          current_version="$(cask_version Casks/veasel-code.rb)"
-          previous_version="$(cask_version "$previous_cask")"
-          if [[ "$previous_version" == "$current_version" ]]; then
-            previous_ref="${previous_ref}^"
-            git show "$previous_ref:Casks/veasel-code.rb" > "$previous_cask"
-            previous_version="$(cask_version "$previous_cask")"
-          fi
-          if [[ -z "$previous_version" ]] || \
-             [[ "$previous_version" == "$current_version" ]]; then
-            echo "::error::Previous cask version not found."
-            exit 1
-          fi
+          python3 scripts/find_previous_cask.py "$GITHUB_WORKSPACE" "$previous_ref" \
+            Casks/veasel-code.rb "$previous_cask"
           tap_cask="$(brew --repo veasel-labs/tap)/Casks/veasel-code.rb"
           cp "$previous_cask" "$tap_cask"
       - name: Install, upgrade, and uninstall the cask
