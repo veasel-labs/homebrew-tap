@@ -59,13 +59,18 @@ jobs:
             local expected_cli_version
             local actual_version
             local executable
+            local tui_executable
+            local actual_tui_version
             expected_version="$(cask_version "$cask_file")"
             expected_cli_version="${expected_version/.next./-next.}"
             actual_version="$(veasel --version)"
             test "$actual_version" = "Veasel Code ${expected_cli_version}"
             veasel --help | grep -F "Commands:"
             executable="$(resolve_path "$(command -v veasel)")"
-            test -x "$(dirname "$executable")/veasel-tui"
+            tui_executable="$(dirname "$executable")/veasel-tui"
+            test -x "$tui_executable"
+            actual_tui_version="$("$tui_executable" --version)"
+            test "$actual_tui_version" = "Veasel Code Terminal ${expected_cli_version}"
             test -f "$(dirname "$executable")/build.json"
           }
           resolve_path() {
