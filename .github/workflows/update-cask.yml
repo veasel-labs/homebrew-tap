@@ -58,15 +58,18 @@ jobs:
           CURRENT_SHA="$(sed -nE 's/^  sha256 "([^"]+)"$/\1/p' Casks/veasel-code.rb)"
           TITLE="chore: update Veasel Code to ${TAG}"
           OPEN_PULL_REQUESTS="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
-            --jq ". | map(select(.title == \"${TITLE}\")) | length")"
+            --jq ". | map(select(.title == \"${TITLE}\" and .base.ref == \"main\" and .head.repo.full_name == \"${GITHUB_REPOSITORY}\" and (.head.ref | startswith(\"automation/cask-update-${TAG}-\")))) | length")"
           if [[ "$CURRENT_VERSION" == "$VERSION" && "$CURRENT_SHA" == "$SHA" ]]; then
             SKIP_UPDATE=true
-            echo "::notice::Cask already matches verified release ${TAG}; skipping branch, install, and PR steps."
+            ALREADY_CURRENT=true
+            echo "::notice::Cask already matches verified release ${TAG}; skipping branch and PR steps while retaining the install smoke test."
           elif [[ "$OPEN_PULL_REQUESTS" != "0" ]]; then
             SKIP_UPDATE=true
+            ALREADY_CURRENT=false
             echo "::notice::An update PR for ${TAG} is already open; waiting for its review instead of creating a duplicate."
           else
             SKIP_UPDATE=false
+            ALREADY_CURRENT=false
           fi
           {
             echo "tag=$TAG"
@@ -75,6 +78,7 @@ jobs:
             echo "url=$URL"
             echo "branch=automation/cask-update-${TAG}-${GITHUB_RUN_ID}"
             echo "skip_update=$SKIP_UPDATE"
+            echo "already_current=$ALREADY_CURRENT"
           } >> "$GITHUB_OUTPUT"
       - name: Prepare cask update branch
         if: steps.release.outputs.skip_update != 'true'
@@ -107,7 +111,7 @@ jobs:
           cp Casks/veasel-code.rb "$(brew --repo veasel-labs/tap)/Casks/veasel-code.rb"
           brew style --cask veasel-labs/tap/veasel-code
       - name: Install and smoke-test the cask
-        if: steps.release.outputs.skip_update != 'true'
+        if: steps.release.outputs.skip_update != 'true' || steps.release.outputs.already_current == 'true'
         run: |
           set -euo pipefail
           brew install --cask veasel-labs/tap/veasel-code
