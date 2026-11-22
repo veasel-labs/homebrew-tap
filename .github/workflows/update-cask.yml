@@ -54,29 +54,40 @@ jobs:
             echo "::error::Downloaded archive does not match the versioned Veasel release manifest."
             exit 1
           fi
+          CURRENT_VERSION="$(sed -nE 's/^  version "([^"]+)"$/\1/p' Casks/veasel-code.rb)"
+          CURRENT_SHA="$(sed -nE 's/^  sha256 "([^"]+)"$/\1/p' Casks/veasel-code.rb)"
+          TITLE="chore: update Veasel Code to ${TAG}"
+          OPEN_PULL_REQUESTS="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+            --jq ". | map(select(.title == \"${TITLE}\")) | length")"
+          if [[ "$CURRENT_VERSION" == "$VERSION" && "$CURRENT_SHA" == "$SHA" ]]; then
+            SKIP_UPDATE=true
+            echo "::notice::Cask already matches verified release ${TAG}; skipping branch, install, and PR steps."
+          elif [[ "$OPEN_PULL_REQUESTS" != "0" ]]; then
+            SKIP_UPDATE=true
+            echo "::notice::An update PR for ${TAG} is already open; waiting for its review instead of creating a duplicate."
+          else
+            SKIP_UPDATE=false
+          fi
           {
             echo "tag=$TAG"
             echo "version=$VERSION"
             echo "sha=$SHA"
             echo "url=$URL"
-            echo "branch=automation/cask-update-${TAG}"
+            echo "branch=automation/cask-update-${TAG}-${GITHUB_RUN_ID}"
+            echo "skip_update=$SKIP_UPDATE"
           } >> "$GITHUB_OUTPUT"
       - name: Prepare cask update branch
+        if: steps.release.outputs.skip_update != 'true'
         env:
           BRANCH: ${{ steps.release.outputs.branch }}
         run: |
           set -euo pipefail
           git fetch origin main
-          if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
-            git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
-            git switch --create "$BRANCH" --track "origin/$BRANCH"
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git rebase origin/main
-          else
-            git switch --create "$BRANCH" origin/main
-          fi
+          git switch --create "$BRANCH" origin/main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Update cask metadata
+        if: steps.release.outputs.skip_update != 'true'
         env:
           VERSION: ${{ steps.release.outputs.version }}
           URL: ${{ steps.release.outputs.url }}
@@ -96,6 +107,7 @@ jobs:
           cp Casks/veasel-code.rb "$(brew --repo veasel-labs/tap)/Casks/veasel-code.rb"
           brew style --cask veasel-labs/tap/veasel-code
       - name: Install and smoke-test the cask
+        if: steps.release.outputs.skip_update != 'true'
         run: |
           set -euo pipefail
           brew install --cask veasel-labs/tap/veasel-code
@@ -105,6 +117,7 @@ jobs:
           test -x "$(dirname "$executable")/veasel-tui"
           test -f "$(dirname "$executable")/build.json"
       - name: Commit release update
+        if: steps.release.outputs.skip_update != 'true'
         env:
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
