@@ -10,6 +10,7 @@ on:
         required: false
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   update:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,37 +47,43 @@ jobs:
           curl --fail --location --retry 5 --retry-all-errors "$URL" -o /tmp/veasel-macOS.tar.gz
           MANIFEST_URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/release.json"
           curl --fail --location --retry 5 --retry-all-errors "$MANIFEST_URL" -o /tmp/veasel-release.json
-          SHA="$(shasum -a 256 /tmp/veasel-macOS.tar.gz | cut -d' ' -f1)"
-          MANIFEST_TAG="$(jq -r '.tag' /tmp/veasel-release.json)"
-          MANIFEST_VERSION="$(jq -r '.version' /tmp/veasel-release.json)"
-          EXPECTED="$(jq -r '.assets[] | select(.name == "veasel-macOS.tar.gz") | .sha256' /tmp/veasel-release.json)"
-          if [[ "$MANIFEST_TAG" != "$TAG" || "$MANIFEST_VERSION" != "$VERSION" || "$SHA" != "$EXPECTED" ]]; then
-            echo "::error::Downloaded archive does not match the versioned Veasel release manifest."
-            exit 1
-          fi
+          SHA="$(python3 scripts/verify_release.py "$TAG" /tmp/veasel-release.json /tmp/veasel-macOS.tar.gz)"
           CURRENT_VERSION="$(sed -nE 's/^  version "([^"]+)"$/\1/p' Casks/veasel-code.rb)"
           CURRENT_SHA="$(sed -nE 's/^  sha256 "([^"]+)"$/\1/p' Casks/veasel-code.rb)"
           TITLE="chore: update Veasel Code to ${TAG}"
-          OPEN_PULL_REQUESTS="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
-            --jq ". | map(select(.title == \"${TITLE}\" and .base.ref == \"main\" and .head.repo.full_name == \"${GITHUB_REPOSITORY}\" and (.head.ref | startswith(\"automation/cask-update-${TAG}-\")))) | length")"
+          OPEN_PULL_REQUEST="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" | jq -c \
+            --arg title "$TITLE" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg branch_prefix "automation/cask-update-${TAG}-" \
+            '[.[] | select(
+              .title == $title and
+              .base.ref == "main" and
+              .head.repo.full_name == $repository and
+              .user.login == "github-actions[bot]" and
+              (.head.ref | startswith($branch_prefix))
+            )] | first // empty')"
+          EXISTING_PR="$(jq -r '.number // empty' <<< "$OPEN_PULL_REQUEST")"
+          EXISTING_BRANCH="$(jq -r '.head.ref // empty' <<< "$OPEN_PULL_REQUEST")"
           if [[ "$CURRENT_VERSION" == "$VERSION" && "$CURRENT_SHA" == "$SHA" ]]; then
             SKIP_UPDATE=true
             ALREADY_CURRENT=true
             echo "::notice::Cask already matches verified release ${TAG}; skipping branch and PR steps while retaining the install smoke test."
-          elif [[ "$OPEN_PULL_REQUESTS" != "0" ]]; then
+          elif [[ -n "$EXISTING_PR" ]]; then
             SKIP_UPDATE=true
             ALREADY_CURRENT=false
             echo "::notice::An update PR for ${TAG} is already open; waiting for its review instead of creating a duplicate."
+            echo "existing_pr=$EXISTING_PR" >> "$GITHUB_OUTPUT"
           else
             SKIP_UPDATE=false
             ALREADY_CURRENT=false
+            EXISTING_BRANCH="automation/cask-update-${TAG}-${GITHUB_RUN_ID}"
           fi
           {
             echo "tag=$TAG"
             echo "version=$VERSION"
             echo "sha=$SHA"
             echo "url=$URL"
-            echo "branch=automation/cask-update-${TAG}-${GITHUB_RUN_ID}"
+            echo "branch=$EXISTING_BRANCH"
             echo "skip_update=$SKIP_UPDATE"
             echo "already_current=$ALREADY_CURRENT"
           } >> "$GITHUB_OUTPUT"
@@ -121,6 +128,7 @@ jobs:
           test -x "$(dirname "$executable")/veasel-tui"
           test -f "$(dirname "$executable")/build.json"
       - name: Commit release update
+        id: pull-request
         if: steps.release.outputs.skip_update != 'true'
         env:
           TAG: ${{ steps.release.outputs.tag }}
@@ -146,7 +154,7 @@ jobs:
 
           ## Validation
 
-          The updater verifies the downloaded macOS archive against the release manifest and smoke-tests the installed backend and bundled TUI. Pull request CI repeats cask style, install, and command checks. A human reviews and merges this change.
+          The updater verifies GitHub's release-asset digests and the tag source SHA, then dispatches Homebrew CI on the exact PR head with previous-release install, upgrade, runtime checks, and uninstall. A human reviews and merges this change.
 
           ## Scope
 
@@ -159,7 +167,96 @@ jobs:
               --title "chore: update Veasel Code to ${TAG}" \
               --body-file "$RUNNER_TEMP/cask-update-pr.md"
           else
-            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" \
+            pull_request_url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" \
               --draft --title "chore: update Veasel Code to ${TAG}" \
-              --body-file "$RUNNER_TEMP/cask-update-pr.md"
+              --body-file "$RUNNER_TEMP/cask-update-pr.md")"
+            pull_request="${pull_request_url##*/}"
           fi
+          echo "number=$pull_request" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh existing release PR branch
+        if: steps.release.outputs.existing_pr != '' && steps.release.outputs.already_current != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.release.outputs.existing_pr }}
+        run: gh pr update-branch "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --rebase
+
+      - name: Validate exact cask PR head on macOS
+        if: steps.release.outputs.already_current != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.release.outputs.branch }}
+          BASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          branch_sha="$(git ls-remote origin "refs/heads/$BRANCH" | awk 'NR == 1 { print $1 }')"
+          [[ "$branch_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::Unable to resolve the exact update branch SHA for $BRANCH."
+            exit 1
+          }
+          previous_run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+            --branch "$BRANCH" --event workflow_dispatch --limit 20 \
+            --json databaseId,headSha \
+            | jq -r --arg expected_sha "$branch_sha" \
+              '[.[] | select(.headSha == $expected_sha) | .databaseId] | max // 0')"
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH" \
+            --field base_sha="$BASE_SHA"
+          run_id=""
+          delay=15
+          for _ in $(seq 1 12); do
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+              --branch "$BRANCH" --event workflow_dispatch --limit 20 \
+              --json databaseId,event,headSha \
+              | jq -r --arg expected_sha "$branch_sha" \
+                  --argjson previous_run_id "$previous_run_id" \
+                  '[.[] | select(.headSha == $expected_sha and .databaseId > $previous_run_id)] | first | .databaseId // empty')"
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+            sleep "$delay"
+            if (( delay < 60 )); then
+              delay=$((delay * 2 > 60 ? 60 : delay * 2))
+            fi
+          done
+          if [[ -z "$run_id" ]]; then
+            echo "::error::Homebrew CI did not start for exact PR head $branch_sha."
+            exit 1
+          fi
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Close superseded automated release PRs
+        if: steps.release.outputs.already_current == 'true' || steps.release.outputs.existing_pr != '' || steps.pull-request.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          SHA: ${{ steps.release.outputs.sha }}
+          NEW_PR: ${{ steps.pull-request.outputs.number || steps.release.outputs.existing_pr }}
+          ALREADY_CURRENT: ${{ steps.release.outputs.already_current }}
+        run: |
+          set -euo pipefail
+          open_updates="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" | jq \
+            --arg repo "$GITHUB_REPOSITORY" \
+            '[.[] | select(
+              .base.ref == "main" and
+              .head.repo.full_name == $repo and
+              .user.login == "github-actions[bot]" and
+              (.head.ref | startswith("automation/cask-update-")) and
+              (.title | startswith("chore: update Veasel Code to v"))
+            ) | {number}]')"
+          if [[ "$ALREADY_CURRENT" == "true" ]]; then
+            superseding="main now matches ${TAG} (SHA-256 ${SHA}); validation run https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          else
+            superseding="superseded by https://github.com/${GITHUB_REPOSITORY}/pull/${NEW_PR}, which updates to verified release ${TAG}"
+          fi
+          while IFS= read -r pull_request; do
+            [[ -n "$pull_request" ]] || continue
+            number="$(jq -r '.number' <<< "$pull_request")"
+            [[ "$number" != "$NEW_PR" ]] || continue
+            changed_files="$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" --json files --jq '[.files[].path] | unique | join(",")')"
+            if [[ "$changed_files" != "Casks/veasel-code.rb" ]]; then
+              echo "::error::Cannot close superseded PR #${number}; it changes unexpected files: ${changed_files}"
+              exit 1
+            fi
+            comment="Superseded: ${superseding}. This generated branch only changed Casks/veasel-code.rb. Closing its stale release proposal; the published release and existing artifacts are unchanged."
+            gh pr close "$number" --repo "$GITHUB_REPOSITORY" --delete-branch --comment "$comment"
+          done < <(jq -c '.[]' <<< "$open_updates")

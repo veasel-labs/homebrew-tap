@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      base_sha:
+        description: "Main commit used as the previous cask for exact-branch upgrade acceptance"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -18,14 +23,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: Test release provenance verifier
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
       - name: Test previous cask version lookup
         run: python3 scripts/test_previous_cask.py
       - name: Install the previous cask version
+        env:
+          DISPATCH_BASE_SHA: ${{ inputs.base_sha }}
         run: |
           brew tap veasel-labs/tap "$GITHUB_WORKSPACE"
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             git fetch origin "$GITHUB_BASE_REF"
             previous_ref=FETCH_HEAD
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && -n "$DISPATCH_BASE_SHA" ]]; then
+            previous_ref="$DISPATCH_BASE_SHA"
           else
             previous_ref="${GITHUB_SHA}^"
           fi
