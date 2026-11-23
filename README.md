@@ -29,15 +29,22 @@ project session. Press `s` only when you want advanced provider/model settings
 ## Updates
 
 The scheduled workflow checks Veasel's public releases, verifies the release
-asset digest, tests the cask, and opens a draft PR with the update. A human
+manifest and macOS archive against GitHub's asset digests, verifies the
+manifest source commit against the release tag, tests the cask, and opens a
+draft PR with the update. A human
 reviews and merges the change before it reaches this tap. You can also run
 **Update cask** from Actions or dispatch a specific release tag.
+
+The updater reuses an open proposal for the same release. After a newer
+proposal passes exact-head macOS CI, it closes only stale, bot-generated cask
+PRs that change no other files and links each closure to the replacement.
 
 ## Release sync
 
 The scheduled **Update cask** workflow follows the newest public Veasel release,
 verifies its archive against the release manifest, then proposes the cask version
-and digest in a draft PR. The exact installed release is recorded in
+and digest in a draft PR. The updater also checks the GitHub release metadata
+digest and exact tag source commit. The exact installed release is recorded in
 [`Casks/veasel-code.rb`](Casks/veasel-code.rb), so this README does not drift
 behind automated updates.
 
