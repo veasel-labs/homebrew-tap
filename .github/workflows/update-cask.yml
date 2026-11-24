@@ -36,12 +36,19 @@ jobs:
           if [[ -n "$INPUT_TAG" ]]; then
             TAG="$INPUT_TAG"
           else
-            TAG="$(gh api 'repos/veasel-labs/veasel/releases?per_page=100' --jq '[.[] | select(.draft == false)][0].tag_name')"
+            TAG="$(gh api 'repos/veasel-labs/veasel/releases?per_page=100' --jq '[.[] | select(.draft == false)][0].tag_name // empty')"
           fi
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-next\.[0-9]+)?$ ]] || {
             echo "::error::Unexpected Veasel release tag: $TAG"
             exit 1
           }
+          RELEASE_METADATA="$(curl --fail --location --retry 5 --retry-all-errors \
+            "https://api.github.com/repos/veasel-labs/veasel/releases/tags/${TAG}")"
+          jq -e --arg tag "$TAG" '.tag_name == $tag and .draft == false and .immutable == true' \
+            <<<"$RELEASE_METADATA" >/dev/null || {
+              echo "::error::Veasel release $TAG is not an immutable published release."
+              exit 1
+            }
           VERSION="${TAG#v}"
           URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/veasel-macOS.tar.gz"
           curl --fail --location --retry 5 --retry-all-errors "$URL" -o /tmp/veasel-macOS.tar.gz
