@@ -42,6 +42,7 @@ jobs:
             echo "::error::Unexpected Veasel release tag: $TAG"
             exit 1
           }
+          URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/veasel-macOS.tar.gz"
           RELEASE_METADATA="$(curl --fail --location --retry 5 --retry-all-errors \
             "https://api.github.com/repos/veasel-labs/veasel/releases/tags/${TAG}")"
           jq -e --arg tag "$TAG" '.tag_name == $tag and .draft == false and .immutable == true' \
@@ -50,16 +51,20 @@ jobs:
               exit 1
             }
           VERSION="${TAG#v}"
-          URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/veasel-macOS.tar.gz"
-          curl --fail --location --retry 5 --retry-all-errors "$URL" -o /tmp/veasel-macOS.tar.gz
           DESKTOP_URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/veasel-desktop-${VERSION}-mac-arm64.dmg"
-          curl --fail --location --retry 5 --retry-all-errors "$DESKTOP_URL" -o /tmp/veasel-desktop.dmg
-          MANIFEST_URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/release.json"
-          curl --fail --location --retry 5 --retry-all-errors "$MANIFEST_URL" -o /tmp/veasel-release.json
-          SHA="$(python3 scripts/verify_release.py "$TAG" /tmp/veasel-release.json /tmp/veasel-macOS.tar.gz)"
-          DESKTOP_SHA="$(python3 scripts/verify_release.py --desktop "$TAG" /tmp/veasel-release.json /tmp/veasel-desktop.dmg)"
+          RELEASE_DIR="$RUNNER_TEMP/veasel-release"
+          mkdir -p "$RELEASE_DIR"
+          gh release download "$TAG" --repo veasel-labs/veasel --dir "$RELEASE_DIR" \
+            --pattern 'veasel-macOS.tar.gz' \
+            --pattern "veasel-desktop-${VERSION}-mac-arm64.dmg" \
+            --pattern 'release.json'
+          CLI_ARCHIVE="$RELEASE_DIR/veasel-macOS.tar.gz"
+          DESKTOP_ASSET="$RELEASE_DIR/veasel-desktop-${VERSION}-mac-arm64.dmg"
+          RELEASE_MANIFEST="$RELEASE_DIR/release.json"
+          SHA="$(python3 scripts/verify_release.py "$TAG" "$RELEASE_MANIFEST" "$CLI_ARCHIVE")"
+          DESKTOP_SHA="$(python3 scripts/verify_release.py --desktop "$TAG" "$RELEASE_MANIFEST" "$DESKTOP_ASSET")"
           DESKTOP_SIGNED="$(jq -r --arg asset_name "veasel-desktop-${VERSION}-mac-arm64.dmg" \
-            '.assets[] | select(.name == $asset_name) | .signed' /tmp/veasel-release.json)"
+            '.assets[] | select(.name == $asset_name) | .signed' "$RELEASE_MANIFEST")"
           [[ "$DESKTOP_SIGNED" == true || "$DESKTOP_SIGNED" == false ]] || {
             echo "::error::Verified macOS Desktop asset has no boolean signature status."
             exit 1
