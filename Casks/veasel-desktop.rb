@@ -8,6 +8,7 @@ cask "veasel-desktop" do
   homepage "https://veasel.dev/"
 
   depends_on arch: :arm64
+  depends_on :macos
 
   app "Veasel.app"
 
