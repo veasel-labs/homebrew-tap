@@ -69,6 +69,152 @@ class VerifyReleaseTests(unittest.TestCase):
                 MODULE.sha256(self.archive_bytes),
             )
 
+    def test_desktop_release_verifies_manifest_source_and_github_digests(self):
+        self.manifest_bytes = json.dumps(self.manifest).encode()
+        dmg = b"macOS Desktop DMG fixture"
+        asset_name = "veasel-desktop-1.2.3-next.0-mac-arm64.dmg"
+        self.manifest["platforms"]["macos"]["desktop"] = {
+            "status": "published",
+            "ci_result": "success",
+            "arch": "arm64",
+            "kind": "desktop-installer",
+            "signed": False,
+            "assets": [asset_name],
+        }
+        self.manifest["assets"].append({
+            "name": asset_name,
+            "platform": "macos",
+            "arch": "arm64",
+            "kind": "desktop-installer",
+            "signed": False,
+            "sha256": MODULE.sha256(dmg),
+        })
+        self.manifest_bytes = json.dumps(self.manifest).encode()
+        self.release["immutable"] = True
+        self.release["assets"].append({
+            "name": asset_name,
+            "digest": f"sha256:{MODULE.sha256(dmg)}",
+        })
+        self.update_api_responses()
+        with patch.object(MODULE, "request", side_effect=lambda url: self.responses[url]):
+            self.assertEqual(
+                MODULE.verify_desktop_release(self.tag, self.manifest_bytes, dmg),
+                MODULE.sha256(dmg),
+            )
+
+    def test_desktop_release_accepts_signed_manifest_asset(self):
+        self.manifest_bytes = json.dumps(self.manifest).encode()
+        dmg = b"signed macOS Desktop DMG fixture"
+        asset_name = "veasel-desktop-1.2.3-next.0-mac-arm64.dmg"
+        self.manifest["platforms"]["macos"]["desktop"] = {
+            "status": "published",
+            "ci_result": "success",
+            "arch": "arm64",
+            "kind": "desktop-installer",
+            "signed": True,
+            "assets": [asset_name],
+        }
+        self.manifest["assets"].append({
+            "name": asset_name,
+            "platform": "macos",
+            "arch": "arm64",
+            "kind": "desktop-installer",
+            "signed": True,
+            "sha256": MODULE.sha256(dmg),
+        })
+        self.manifest_bytes = json.dumps(self.manifest).encode()
+        self.release["immutable"] = True
+        self.release["assets"].append({
+            "name": asset_name,
+            "digest": f"sha256:{MODULE.sha256(dmg)}",
+        })
+        self.update_api_responses()
+        with patch.object(MODULE, "request", side_effect=lambda url: self.responses[url]):
+            self.assertEqual(
+                MODULE.verify_desktop_release(self.tag, self.manifest_bytes, dmg),
+                MODULE.sha256(dmg),
+            )
+
+    def test_desktop_release_rejects_conflicting_signature_status(self):
+        dmg = b"macOS Desktop DMG fixture"
+        asset_name = "veasel-desktop-1.2.3-next.0-mac-arm64.dmg"
+        self.manifest["platforms"]["macos"]["desktop"] = {
+            "status": "published",
+            "ci_result": "success",
+            "arch": "arm64",
+            "kind": "desktop-installer",
+            "signed": True,
+            "assets": [asset_name],
+        }
+        self.manifest["assets"].append({
+            "name": asset_name,
+            "platform": "macos",
+            "arch": "arm64",
+            "kind": "desktop-installer",
+            "signed": False,
+            "sha256": MODULE.sha256(dmg),
+        })
+        self.manifest_bytes = json.dumps(self.manifest).encode()
+        self.release["immutable"] = True
+        self.release["assets"].append({
+            "name": asset_name, "digest": f"sha256:{MODULE.sha256(dmg)}",
+        })
+        self.update_api_responses()
+        with patch.object(MODULE, "request", side_effect=lambda url: self.responses[url]):
+            with self.assertRaisesRegex(ValueError, "metadata is inconsistent"):
+                MODULE.verify_desktop_release(self.tag, self.manifest_bytes, dmg)
+
+    def test_desktop_release_rejects_unpublished_installer(self):
+        dmg = b"macOS Desktop DMG fixture"
+        asset_name = "veasel-desktop-1.2.3-next.0-mac-arm64.dmg"
+        self.manifest["platforms"]["macos"]["desktop"] = {
+            "status": "failed",
+            "ci_result": "success",
+            "arch": "arm64",
+            "kind": "desktop-installer",
+            "signed": False,
+            "assets": [asset_name],
+        }
+        asset = {
+            "name": asset_name, "platform": "macos", "arch": "arm64",
+            "kind": "desktop-installer", "signed": False, "sha256": MODULE.sha256(dmg),
+        }
+        self.manifest["assets"].append(asset)
+        self.manifest_bytes = json.dumps(self.manifest).encode()
+        self.release["immutable"] = True
+        self.release["assets"].append({
+            "name": asset_name, "digest": f"sha256:{MODULE.sha256(dmg)}",
+        })
+        self.update_api_responses()
+        with patch.object(MODULE, "request", side_effect=lambda url: self.responses[url]):
+            with self.assertRaisesRegex(ValueError, "successful arm64 macOS Desktop"):
+                MODULE.verify_desktop_release(self.tag, self.manifest_bytes, dmg)
+
+    def test_desktop_release_rejects_tampered_dmg(self):
+        dmg = b"macOS Desktop DMG fixture"
+        asset_name = "veasel-desktop-1.2.3-next.0-mac-arm64.dmg"
+        self.manifest["platforms"]["macos"]["desktop"] = {
+            "status": "published",
+            "ci_result": "success",
+            "arch": "arm64",
+            "kind": "desktop-installer",
+            "signed": False,
+            "assets": [asset_name],
+        }
+        self.manifest["assets"].append({
+            "name": asset_name, "platform": "macos", "arch": "arm64",
+            "kind": "desktop-installer", "signed": False, "sha256": MODULE.sha256(dmg),
+        })
+        self.manifest_bytes = json.dumps(self.manifest).encode()
+        self.release["immutable"] = True
+        self.release["assets"].append({
+            "name": asset_name, "digest": f"sha256:{MODULE.sha256(dmg)}",
+        })
+        self.update_api_responses()
+        with patch.object(MODULE, "request", side_effect=lambda url: self.responses[url]):
+            with self.assertRaisesRegex(ValueError, "does not match GitHub"):
+                MODULE.verify_desktop_release(self.tag, self.manifest_bytes, b"tampered")
+
     def test_release_rejects_manifest_digest_mismatch(self):
         self.manifest_bytes = json.dumps(self.manifest).encode()
         self.update_api_responses()

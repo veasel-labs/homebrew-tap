@@ -95,3 +95,15 @@ jobs:
             echo "::error::Cask remains installed after uninstall."
             exit 1
           fi
+      - name: Install and inspect the Desktop cask
+        run: |
+          set -euo pipefail
+          brew style --cask veasel-labs/tap/veasel-desktop
+          brew install --cask veasel-labs/tap/veasel-desktop
+          test -x /Applications/Veasel.app/Contents/MacOS/Veasel
+          brew uninstall --cask veasel-labs/tap/veasel-desktop
+          test ! -e /Applications/Veasel.app
+          if brew list --cask --versions veasel-desktop | grep -q .; then
+            echo "::error::Desktop cask remains installed after uninstall."
+            exit 1
+          fi

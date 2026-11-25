@@ -114,6 +114,86 @@ def validate_manifest(
     return asset
 
 
+def validate_desktop_manifest(
+    manifest: dict[str, object], tag: str, source_commit: str
+) -> dict[str, object]:
+    matched_tag = TAG_PATTERN.fullmatch(tag)
+    if matched_tag is None:
+        raise ValueError(f"Unsupported Veasel tag: {tag}")
+    version = matched_tag.group("version")
+    if (
+        manifest.get("tag") != tag
+        or manifest.get("version") != version
+        or manifest.get("source_commit") != source_commit
+    ):
+        raise ValueError("Release manifest tag/version/source commit do not match GitHub metadata")
+    platforms = manifest.get("platforms")
+    macos = platforms.get("macos") if isinstance(platforms, dict) else None
+    desktop = macos.get("desktop") if isinstance(macos, dict) else None
+    if (
+        not isinstance(macos, dict)
+        or macos.get("status") != "published"
+        or macos.get("ci_result") != "success"
+        or macos.get("arch") != "arm64"
+        or not isinstance(desktop, dict)
+        or desktop.get("status") != "published"
+        or desktop.get("ci_result") != "success"
+        or desktop.get("arch") != "arm64"
+        or desktop.get("kind") != "desktop-installer"
+        or not isinstance(desktop.get("signed"), bool)
+    ):
+        raise ValueError("Release manifest does not declare a successful arm64 macOS Desktop installer")
+    expected_name = f"veasel-desktop-{version}-mac-arm64.dmg"
+    desktop_names = desktop.get("assets")
+    if not isinstance(desktop_names, list) or desktop_names != [expected_name]:
+        raise ValueError("Release manifest macOS Desktop assets are missing or inconsistent")
+    assets = manifest.get("assets")
+    matching = [
+        item for item in assets
+        if isinstance(item, dict) and item.get("name") == expected_name
+    ] if isinstance(assets, list) else []
+    if len(matching) != 1:
+        raise ValueError("Release manifest has an ambiguous or missing macOS Desktop asset")
+    asset = matching[0]
+    if (
+        asset.get("platform") != "macos"
+        or asset.get("arch") != "arm64"
+        or asset.get("kind") != "desktop-installer"
+        or not isinstance(asset.get("signed"), bool)
+        or asset.get("signed") != desktop.get("signed")
+    ):
+        raise ValueError("Release manifest macOS Desktop asset metadata is inconsistent")
+    digest = asset.get("sha256")
+    if not isinstance(digest, str) or not SHA256_PATTERN.fullmatch(digest):
+        raise ValueError("Release manifest macOS Desktop asset has an invalid SHA-256 digest")
+    return asset
+
+def verify_desktop_release(tag: str, manifest_bytes: bytes, dmg_bytes: bytes) -> str:
+    """Verify a macOS Desktop DMG against its immutable tag and release manifest."""
+    if TAG_PATTERN.fullmatch(tag) is None:
+        raise ValueError(f"Unsupported Veasel tag: {tag}")
+    release = json.loads(request(f"{API}/releases/tags/{quote(tag, safe='')}"))
+    if (
+        release.get("tag_name") != tag
+        or release.get("draft")
+        or release.get("immutable") is not True
+    ):
+        raise ValueError("GitHub release metadata does not identify an immutable published requested tag")
+    verify_github_asset_digest(release, "release.json", manifest_bytes)
+    source_commit = resolve_tag_commit(tag)
+    try:
+        manifest = json.loads(manifest_bytes)
+    except json.JSONDecodeError as error:
+        raise ValueError("Release manifest is not valid JSON") from error
+    if not isinstance(manifest, dict):
+        raise ValueError("Release manifest must be a JSON object")
+    asset = validate_desktop_manifest(manifest, tag, source_commit)
+    actual = verify_github_asset_digest(release, str(asset["name"]), dmg_bytes)
+    if actual != asset["sha256"]:
+        raise ValueError("macOS Desktop digest does not match release.json")
+    return actual
+
+
 def verify_release(tag: str, manifest_bytes: bytes, archive_bytes: bytes) -> str:
     if TAG_PATTERN.fullmatch(tag) is None:
         raise ValueError(f"Unsupported Veasel tag: {tag}")
@@ -138,14 +218,20 @@ def verify_release(tag: str, manifest_bytes: bytes, archive_bytes: bytes) -> str
 
 
 def main() -> None:
-    if len(sys.argv) != 4:
-        raise SystemExit("usage: verify_release.py <tag> <release.json> <macOS archive>")
-    tag, manifest_path, archive_path = sys.argv[1:]
-    digest = verify_release(
-        tag,
-        Path(manifest_path).read_bytes(),
-        Path(archive_path).read_bytes(),
-    )
+    if len(sys.argv) == 5 and sys.argv[1] == "--desktop":
+        _, _, tag, manifest_path, dmg_path = sys.argv
+        digest = verify_desktop_release(
+            tag, Path(manifest_path).read_bytes(), Path(dmg_path).read_bytes()
+        )
+    elif len(sys.argv) == 4:
+        _, tag, manifest_path, archive_path = sys.argv
+        digest = verify_release(
+            tag, Path(manifest_path).read_bytes(), Path(archive_path).read_bytes()
+        )
+    else:
+        raise SystemExit(
+            "usage: verify_release.py [--desktop] <tag> <release.json> <archive-or-DMG>"
+        )
     print(digest)
 
 

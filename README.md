@@ -13,12 +13,20 @@ V-native coding agent.
 brew tap veasel-labs/tap
 brew install --cask veasel-code
 veasel
+
+# Optional graphical application
+brew install --cask veasel-desktop
 ```
 
-The current cask targets Apple Silicon Macs. The V backend and OpenTUI terminal
-client are prebuilt native executables, so the installed application does not
-require Bun or a V compiler. The release archive stays in Homebrew's Caskroom
-so the backend can find its adjacent terminal-client executable.
+`veasel-code` is the Apple Silicon CLI/TUI cask. The V backend and OpenTUI
+terminal client are prebuilt native executables, so they do not require Bun or a
+V compiler. The release archive stays in Homebrew's Caskroom so the backend can
+find its adjacent terminal-client executable.
+
+`veasel-desktop` is a separate optional cask for the Apple Silicon Desktop app
+with Focus and World. It bundles the local V backend and does not replace or
+modify the CLI/TUI cask. The cask follows each release manifest's signature status; macOS may ask
+you to approve opening an unsigned preview.
 
 Use `veasel serve` to start only the local backend. Running `veasel` starts or
 reuses the loopback server, then opens the TUI. At the home screen, type
@@ -42,11 +50,12 @@ PRs that change no other files and links each closure to the replacement.
 ## Release sync
 
 The scheduled **Update cask** workflow follows the newest public Veasel release,
-verifies its archive against the release manifest, then proposes the cask version
-and digest in a draft PR. The updater also checks the GitHub release metadata
-digest and exact tag source commit. The exact installed release is recorded in
-[`Casks/veasel-code.rb`](Casks/veasel-code.rb), so this README does not drift
-behind automated updates.
+verifies its CLI archive and Desktop DMG against the release manifest and
+GitHub's asset digests, then proposes both cask versions and digests in a draft
+PR. The updater also checks the exact tag source commit. The current CLI/TUI
+release is recorded in [`Casks/veasel-code.rb`](Casks/veasel-code.rb); the
+optional Desktop release is recorded in
+[`Casks/veasel-desktop.rb`](Casks/veasel-desktop.rb).
 
 ## Support
 

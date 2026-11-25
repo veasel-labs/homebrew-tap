@@ -52,11 +52,22 @@ jobs:
           VERSION="${TAG#v}"
           URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/veasel-macOS.tar.gz"
           curl --fail --location --retry 5 --retry-all-errors "$URL" -o /tmp/veasel-macOS.tar.gz
+          DESKTOP_URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/veasel-desktop-${VERSION}-mac-arm64.dmg"
+          curl --fail --location --retry 5 --retry-all-errors "$DESKTOP_URL" -o /tmp/veasel-desktop.dmg
           MANIFEST_URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/release.json"
           curl --fail --location --retry 5 --retry-all-errors "$MANIFEST_URL" -o /tmp/veasel-release.json
           SHA="$(python3 scripts/verify_release.py "$TAG" /tmp/veasel-release.json /tmp/veasel-macOS.tar.gz)"
+          DESKTOP_SHA="$(python3 scripts/verify_release.py --desktop "$TAG" /tmp/veasel-release.json /tmp/veasel-desktop.dmg)"
+          DESKTOP_SIGNED="$(jq -r --arg asset_name "veasel-desktop-${VERSION}-mac-arm64.dmg" \
+            '.assets[] | select(.name == $asset_name) | .signed' /tmp/veasel-release.json)"
+          [[ "$DESKTOP_SIGNED" == true || "$DESKTOP_SIGNED" == false ]] || {
+            echo "::error::Verified macOS Desktop asset has no boolean signature status."
+            exit 1
+          }
           CURRENT_VERSION="$(sed -nE 's/^  version "([^"]+)"$/\1/p' Casks/veasel-code.rb)"
           CURRENT_SHA="$(sed -nE 's/^  sha256 "([^"]+)"$/\1/p' Casks/veasel-code.rb)"
+          CURRENT_DESKTOP_VERSION="$(sed -nE 's/^  version "([^"]+)"$/\1/p' Casks/veasel-desktop.rb)"
+          CURRENT_DESKTOP_SHA="$(sed -nE 's/^  sha256 "([^"]+)"$/\1/p' Casks/veasel-desktop.rb)"
           TITLE="chore: update Veasel Code to ${TAG}"
           OPEN_PULL_REQUEST="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" | jq -c \
             --arg title "$TITLE" \
@@ -71,7 +82,8 @@ jobs:
             )] | first // empty')"
           EXISTING_PR="$(jq -r '.number // empty' <<< "$OPEN_PULL_REQUEST")"
           EXISTING_BRANCH="$(jq -r '.head.ref // empty' <<< "$OPEN_PULL_REQUEST")"
-          if [[ "$CURRENT_VERSION" == "$VERSION" && "$CURRENT_SHA" == "$SHA" ]]; then
+          if [[ "$CURRENT_VERSION" == "$VERSION" && "$CURRENT_SHA" == "$SHA" && \
+                "$CURRENT_DESKTOP_VERSION" == "$VERSION" && "$CURRENT_DESKTOP_SHA" == "$DESKTOP_SHA" ]]; then
             SKIP_UPDATE=true
             ALREADY_CURRENT=true
             echo "::notice::Cask already matches verified release ${TAG}; skipping branch and PR steps while retaining the install smoke test."
@@ -90,6 +102,9 @@ jobs:
             echo "version=$VERSION"
             echo "sha=$SHA"
             echo "url=$URL"
+            echo "desktop_sha=$DESKTOP_SHA"
+            echo "desktop_url=$DESKTOP_URL"
+            echo "desktop_signed=$DESKTOP_SIGNED"
             echo "branch=$EXISTING_BRANCH"
             echo "skip_update=$SKIP_UPDATE"
             echo "already_current=$ALREADY_CURRENT"
@@ -110,20 +125,38 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
           URL: ${{ steps.release.outputs.url }}
           SHA: ${{ steps.release.outputs.sha }}
+          DESKTOP_URL: ${{ steps.release.outputs.desktop_url }}
+          DESKTOP_SHA: ${{ steps.release.outputs.desktop_sha }}
+          DESKTOP_SIGNED: ${{ steps.release.outputs.desktop_signed }}
         run: |
           ruby -e '
-            path = "Casks/veasel-code.rb"
-            body = File.read(path)
-            { /^  url ".*"$/ => "  url \"#{ENV.fetch("URL")}\"",
-              /^  version ".*"$/ => "  version \"#{ENV.fetch("VERSION")}\"",
-              /^  sha256 ".*"$/ => "  sha256 \"#{ENV.fetch("SHA")}\"" }.each do |pattern, replacement|
-              abort "cask field missing: #{pattern}" unless body.sub!(pattern, replacement)
+            { "Casks/veasel-code.rb" => { "URL" => "url", "SHA" => "sha256" },
+              "Casks/veasel-desktop.rb" => { "DESKTOP_URL" => "url", "DESKTOP_SHA" => "sha256" } }.each do |path, fields|
+              body = File.read(path)
+              fields.each do |variable, field|
+                pattern = /^  #{field} \".*\"$/
+                replacement = "  #{field} \"#{ENV.fetch(variable)}\""
+                abort "cask field missing: #{pattern}" unless body.sub!(pattern, replacement)
+              end
+              version = ENV.fetch("VERSION")
+              body.sub!(/^  version \".*\"$/, "  version \"#{version}\"") or abort "cask version missing: #{path}"
+              if path == "Casks/veasel-desktop.rb"
+                signed = ENV.fetch("DESKTOP_SIGNED") == "true"
+                status = if signed
+                  "The release manifest marks this installer signed."
+                else
+                  "The release manifest marks this installer unsigned."
+                end
+                status_line = /^    The release manifest marks this installer (?:un)?signed\.$/
+                abort "cask signature status missing: #{path}" unless body.sub!(status_line, "    #{status}")
+              end
+              File.write(path, body)
             end
-            File.write(path, body)
           '
           brew tap veasel-labs/tap "$GITHUB_WORKSPACE"
-          cp Casks/veasel-code.rb "$(brew --repo veasel-labs/tap)/Casks/veasel-code.rb"
+          cp Casks/veasel-code.rb Casks/veasel-desktop.rb "$(brew --repo veasel-labs/tap)/Casks/"
           brew style --cask veasel-labs/tap/veasel-code
+          brew style --cask veasel-labs/tap/veasel-desktop
       - name: Install and smoke-test the cask
         if: steps.release.outputs.skip_update != 'true' || steps.release.outputs.already_current == 'true'
         run: |
@@ -134,6 +167,8 @@ jobs:
           executable="$(python3 -c 'import os, shutil; print(os.path.realpath(shutil.which("veasel")))')"
           test -x "$(dirname "$executable")/veasel-tui"
           test -f "$(dirname "$executable")/build.json"
+          brew install --cask veasel-labs/tap/veasel-desktop
+          test -x /Applications/Veasel.app/Contents/MacOS/Veasel
       - name: Commit release update
         id: pull-request
         if: steps.release.outputs.skip_update != 'true'
@@ -145,13 +180,13 @@ jobs:
         run: |
           set -euo pipefail
           gh auth setup-git
-          if git diff --quiet -- Casks/veasel-code.rb; then
-            echo "Cask already reflects ${TAG}."
+          if git diff --quiet -- Casks/veasel-code.rb Casks/veasel-desktop.rb; then
+            echo "Casks already reflect ${TAG}."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/veasel-code.rb
+          git add Casks/veasel-code.rb Casks/veasel-desktop.rb
           git commit -m "chore: update Veasel Code to ${TAG}"
           git push --set-upstream origin "$BRANCH"
           cat > "$RUNNER_TEMP/cask-update-pr.md" <<EOF
@@ -165,7 +200,8 @@ jobs:
 
           ## Scope
 
-          Cask version, release URL, and SHA-256 only.
+          CLI/TUI and Desktop cask versions, release URLs, and SHA-256 values.
+          The Desktop cask keeps the release manifest's signature status explicit.
           EOF
           pull_request="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
             --head "$BRANCH" --json number --jq '.[0].number // empty')"
@@ -260,10 +296,11 @@ jobs:
             number="$(jq -r '.number' <<< "$pull_request")"
             [[ "$number" != "$NEW_PR" ]] || continue
             changed_files="$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" --json files --jq '[.files[].path] | unique | join(",")')"
-            if [[ "$changed_files" != "Casks/veasel-code.rb" ]]; then
+            if [[ "$changed_files" != "Casks/veasel-code.rb" && \
+                  "$changed_files" != "Casks/veasel-code.rb,Casks/veasel-desktop.rb" ]]; then
               echo "::error::Cannot close superseded PR #${number}; it changes unexpected files: ${changed_files}"
               exit 1
             fi
-            comment="Superseded: ${superseding}. This generated branch only changed Casks/veasel-code.rb. Closing its stale release proposal; the published release and existing artifacts are unchanged."
+            comment="Superseded: ${superseding}. This generated branch only changed the Veasel CLI/TUI and Desktop cask metadata. Closing its stale release proposal; the published release and existing artifacts are unchanged."
             gh pr close "$number" --repo "$GITHUB_REPOSITORY" --delete-branch --comment "$comment"
           done < <(jq -c '.[]' <<< "$open_updates")
