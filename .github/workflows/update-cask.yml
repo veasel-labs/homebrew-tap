@@ -43,8 +43,7 @@ jobs:
             exit 1
           }
           URL="https://github.com/veasel-labs/veasel/releases/download/${TAG}/veasel-macOS.tar.gz"
-          RELEASE_METADATA="$(curl --fail --location --retry 5 --retry-all-errors \
-            "https://api.github.com/repos/veasel-labs/veasel/releases/tags/${TAG}")"
+          RELEASE_METADATA="$(gh api "repos/veasel-labs/veasel/releases/tags/${TAG}")"
           jq -e --arg tag "$TAG" '.tag_name == $tag and .draft == false and .immutable == true' \
             <<<"$RELEASE_METADATA" >/dev/null || {
               echo "::error::Veasel release $TAG is not an immutable published release."
