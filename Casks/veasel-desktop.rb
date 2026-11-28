@@ -1,8 +1,8 @@
 cask "veasel-desktop" do
-  version "0.117.1-next.0"
-  sha256 "72f30ebb2f281e76be195a885d4b0f40d0881e26f85439642ad105e24f9a5970"
+  version "0.118.0-next.0"
+  sha256 "4efc25e66d77c03ffd728abbfe432b0f070245d18e9006f95c5349ddf21cf2b8"
 
-  url "https://github.com/veasel-labs/veasel/releases/download/v0.117.1-next.0/veasel-desktop-0.117.1-next.0-mac-arm64.dmg"
+  url "https://github.com/veasel-labs/veasel/releases/download/v0.118.0-next.0/veasel-desktop-0.118.0-next.0-mac-arm64.dmg"
   name "Veasel Desktop"
   desc "Local-first coding workspace with Focus and World"
   homepage "https://veasel.dev/"
